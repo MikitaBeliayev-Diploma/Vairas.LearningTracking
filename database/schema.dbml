@@ -1,0 +1,867 @@
+Project Vairas_Learning_Tracking {
+  database_type: 'PostgreSQL'
+  Note: 'Learning Tracking REVIEW FIX design, 2026-11-15: pinned programme version, definition-specific requirements, immutable corrected assessment-result versions without stored eligibility projection or mutable current-result pointer, stable assessment identity and curriculum content, derived training credit, consolidated readiness evidence, terminal decision invalidation audit, relational journal checklist, two-table Scheduling source reconciliation. Six aggregate roots; supporting evidence is not additional aggregates. DBML models storage and local integrity, not executable authorization, lifecycle, concurrency or transport guarantees. No SQL migration, application, legal certification or deployed integration is asserted. See learning-tracking-context-reviewed.md and learning-tracking-migration-reviewed.md. Structural checks do not prove runtime behavior.'
+}
+
+Enum lt_program_status {
+  Draft
+  Published
+  Retired
+}
+
+Enum lt_training_kind {
+  Theory
+  Practical
+}
+
+Enum lt_assessment_stage {
+  Midterm
+  Final
+}
+
+Enum lt_requirement_kind {
+  MinimumTheoryMinutes
+  MinimumPracticalMinutes
+  AssessmentPassed
+  MinimumMark
+}
+
+Enum lt_validation {
+  Incomplete
+  Valid
+  Invalid
+}
+
+Enum lt_freshness {
+  Current
+  ReconciliationPending
+  Unavailable
+}
+
+Enum lt_response_role {
+  Instructor
+  Student
+}
+
+Enum lt_response_kind {
+  Confirm
+  Dispute
+}
+
+Enum lt_attendance {
+  Present
+  Absent
+}
+
+Enum lt_formal_status {
+  Incomplete
+  Satisfied
+  Unverified
+}
+
+Enum lt_decision {
+  Approved
+  NotApproved
+}
+
+Enum lt_result_status {
+  Recorded
+  ReviewRequired
+  Annulled
+}
+
+Enum lt_invalidation_scope {
+  ProspectiveOnly
+  HistoricalReviewRequired
+}
+
+Enum lt_outcome {
+  Passed
+  Failed
+}
+
+Enum lt_evidence_kind {
+  Journal
+  CompletionReport
+}
+
+Enum lt_evidence_status {
+  Ready
+  Incomplete
+}
+
+Enum lt_check_outcome {
+  Satisfied
+  Unsatisfied
+  Unverified
+}
+
+Enum lt_check_scope {
+  Snapshot
+  EvidenceItem
+}
+
+Enum lt_channel {
+  Web
+  MCP
+  Integration
+  System
+}
+
+Table training_program {
+  id uuid [pk]
+  school_id uuid [not null]
+  category_code varchar(16) [not null]
+  name varchar(200) [not null]
+  created_at timestamptz [not null]
+  revision bigint [not null]
+  indexes {
+    (id, school_id) [unique]
+    (id, school_id, category_code) [unique]
+  }
+  Note: 'TrainingProgram aggregate identity. School/category are external domain references. No separate Course entity. Publication service permits at most one effective published version for this school/category/pathway.'
+  checks {
+    `revision > 0` [name: 'program_revision_positive']
+  }
+}
+
+Table training_program_version {
+  id uuid [pk]
+  school_id uuid [not null]
+  program_id uuid [not null]
+  version int [not null]
+  status lt_program_status [not null]
+  pathway_code varchar(80) [not null]
+  required_theory_minutes int [not null]
+  required_practical_minutes int [not null]
+  theory_minutes_per_unit int [not null]
+  practical_minutes_per_unit int [not null]
+  effective_from date [not null]
+  effective_to date
+  legal_basis_verified boolean [not null]
+  created_by uuid [not null]
+  created_at timestamptz [not null]
+  published_by uuid
+  published_at timestamptz
+  retired_at timestamptz
+  journal_checklist_version_id uuid
+  indexes {
+    (id, school_id) [unique]
+    (program_id, version, school_id) [unique]
+    (id, school_id, program_id) [unique]
+  }
+  Note: 'Owns the complete curriculum version. Draft editable; Published content and all curriculum children immutable; Retired retains content and historical applicability. No legal values are supplied. Retire/publish are audited. Effective retirement is not deletion or automatic enrollment transfer.'
+  checks {
+    `version > 0` [name: 'program_version_positive']
+    `required_theory_minutes >= 0 AND required_practical_minutes >= 0` [name: 'program_minutes_nonnegative']
+    `theory_minutes_per_unit > 0 AND practical_minutes_per_unit > 0` [name: 'program_conversion_positive']
+    `effective_to IS NULL OR effective_to >= effective_from` [name: 'program_effective_period']
+    `(status = 'Draft' AND published_at IS NULL AND published_by IS NULL AND retired_at IS NULL) OR (status = 'Published' AND published_at IS NOT NULL AND published_by IS NOT NULL AND retired_at IS NULL AND legal_basis_verified) OR (status = 'Retired' AND published_at IS NOT NULL AND published_by IS NOT NULL AND retired_at IS NOT NULL AND retired_at >= published_at AND legal_basis_verified)` [name: 'program_publication_shape']
+    `status = 'Draft' OR journal_checklist_version_id IS NOT NULL` [name: 'published_checklist']
+  }
+}
+
+Table program_rule_source {
+  id uuid [pk]
+  school_id uuid [not null]
+  program_version_id uuid [not null]
+  rule_code varchar(80) [not null]
+  source_uri text [not null]
+  source_edition varchar(200) [not null]
+  applicability text [not null]
+  verified_by uuid
+  verified_at timestamptz
+  effective_from date [not null]
+  effective_to date
+  unit_description varchar(120) [not null]
+  indexes {
+    (id, school_id) [unique]
+  }
+  Note: 'Version-owned provenance and applicability. Explicit source/edition/unit/effective dates; a publication or regulated claim requires complete verified applicable rules. A URI is provenance, not proof of verification.'
+  checks {
+    `(verified_by IS NULL) = (verified_at IS NULL)` [name: 'rule_verification_pair']
+    `effective_to IS NULL OR effective_to >= effective_from` [name: 'rule_effective_period']
+  }
+}
+
+Table training_topic {
+  id uuid [pk]
+  school_id uuid [not null]
+  program_version_id uuid [not null]
+  topic_key varchar(80) [not null]
+  name varchar(200) [not null]
+  description text
+  indexes {
+    (id, school_id) [unique]
+    (program_version_id, topic_key, school_id) [unique]
+    (id, school_id, program_version_id) [unique]
+  }
+  Note: 'Version-owned topic catalogue shared by practical records and assessment definitions. topic_key is stable within the programme lineage; changing a published title requires a new programme version.'
+}
+
+Table assessment_definition {
+  id uuid [pk]
+  school_id uuid [not null]
+  program_id uuid [not null]
+  code varchar(80) [not null]
+  indexes {
+    (id, school_id) [unique]
+    (program_id, code, school_id) [unique]
+    (id, school_id, program_id) [unique]
+  }
+  Note: 'Stable identity only, owned by TrainingProgram; compatible with Scheduling.assessment_definition_id. Editable assessment content lives in assessment_definition_version. This is not an independent aggregate root.'
+}
+
+Table assessment_definition_version {
+  id uuid [pk]
+  school_id uuid [not null]
+  definition_id uuid [not null]
+  program_id uuid [not null]
+  program_version_id uuid [not null]
+  name varchar(200) [not null]
+  training_kind lt_training_kind [not null]
+  stage lt_assessment_stage [not null]
+  minimum_mark int [not null]
+  maximum_mark int [not null]
+  passing_mark int [not null]
+  required_for_completion boolean [not null]
+  indexes {
+    (id, school_id) [unique]
+    (definition_id, program_version_id, school_id) [unique]
+    (id, school_id, program_version_id) [unique]
+    (id, school_id, definition_id) [unique]
+  }
+  Note: 'Version-owned definition. Entire numeric scale/threshold frozen with curriculum. Topic marks use this scale and never determine overall outcome. Final prerequisites exclude the future assessment itself and its uncompleted duration.'
+  checks {
+    `minimum_mark < maximum_mark AND passing_mark >= minimum_mark AND passing_mark <= maximum_mark` [name: 'assessment_scale']
+  }
+}
+
+Table assessment_topic {
+  id uuid [pk]
+  school_id uuid [not null]
+  definition_version_id uuid [not null]
+  program_version_id uuid [not null]
+  topic_id uuid [not null]
+  indexes {
+    (id, school_id) [unique]
+    (definition_version_id, topic_id, school_id) [unique]
+    (id, school_id, definition_version_id) [unique]
+  }
+  Note: 'Selected programme topics for one assessment definition version; not an independent topic catalogue.'
+}
+
+Table admission_requirement {
+  id uuid [pk]
+  school_id uuid [not null]
+  definition_version_id uuid [not null]
+  program_version_id uuid [not null]
+  code varchar(80) [not null]
+  kind lt_requirement_kind [not null]
+  minimum_minutes int
+  prerequisite_definition_version_id uuid
+  minimum_mark int
+  indexes {
+    (id, school_id) [unique]
+    (definition_version_id, code, school_id) [unique]
+    (id, school_id, definition_version_id) [unique]
+  }
+  Note: 'One independently identifiable, version-owned requirement belongs to exactly one assessment_definition_version; no M:N sharing across assessments. The curriculum version is frozen by the composite FK to assessment_definition_version. Duplicate requirement codes within one definition version are rejected, but different definitions may use the same code. Four typed conditions are conjunctive. Service validates prerequisite graph, mark scale, published programme and same-version applicability.'
+  checks {
+    `(kind IN ('MinimumTheoryMinutes','MinimumPracticalMinutes') AND minimum_minutes IS NOT NULL AND minimum_minutes >= 0 AND prerequisite_definition_version_id IS NULL AND minimum_mark IS NULL) OR (kind = 'AssessmentPassed' AND minimum_minutes IS NULL AND prerequisite_definition_version_id IS NOT NULL AND minimum_mark IS NULL) OR (kind = 'MinimumMark' AND minimum_minutes IS NULL AND prerequisite_definition_version_id IS NOT NULL AND minimum_mark IS NOT NULL)` [name: 'requirement_typed_shape']
+  }
+}
+
+Table student_training {
+  id uuid [pk]
+  school_id uuid [not null]
+  student_id uuid [not null]
+  category_code varchar(16) [not null]
+  program_version_id uuid
+  program_assigned_by uuid
+  program_assigned_at timestamptz
+  dependency_revision bigint [not null]
+  created_at timestamptz [not null]
+  indexes {
+    (id, school_id) [unique]
+    (id, school_id, category_code) [unique]
+    (id, school_id, student_id) [unique]
+    (id, school_id, program_version_id) [unique]
+  }
+  Note: 'StudentTraining aggregate: id IS external EnrollmentId (not a new enrollment identity). Student/category are verified scoped references, not identity ownership. program_version_id is assigned once after verified enrollment/group/programme applicability; it is pinned for the enrollment. Unassigned initialization is allowed but cannot earn credit, approve readiness or submit Scheduling requests. No reassignment/transfer after assignment: reject instead of silently recalculating credit, results or legal basis. program_assigned_by/at record the initial binding. dependency_revision invalidates derived decisions/snapshots; no stored/editable credited-hour totals or percentage column. Deduplicated progress is derived from current eligible practical/theory facts.'
+  checks {
+    `dependency_revision > 0` [name: 'training_dependency_positive']
+    `(program_version_id IS NULL AND program_assigned_by IS NULL AND program_assigned_at IS NULL) OR (program_version_id IS NOT NULL AND program_assigned_by IS NOT NULL AND program_assigned_at IS NOT NULL)` [name: 'program_initial_assignment_pair']
+  }
+}
+
+Table lesson_source_snapshot {
+  id uuid [pk]
+  school_id uuid [not null]
+  lesson_id uuid [not null]
+  lesson_revision int [not null]
+  kind lt_training_kind [not null]
+  instructor_id uuid [not null]
+  enrollment_id uuid
+  student_id uuid
+  vehicle_id uuid
+  group_id uuid
+  membership_revision bigint
+  actual_start timestamptz
+  actual_end timestamptz
+  physically_completed boolean [not null]
+  source_valid boolean [not null]
+  captured_at timestamptz [not null]
+  source_event_id uuid
+  indexes {
+    (id, school_id) [unique]
+    (lesson_id, lesson_revision, school_id) [unique]
+    (id, school_id, lesson_id) [unique]
+  }
+  Note: 'Immutable verified copy of Scheduling physical state and version, not lesson ownership. Theory GroupId + MembershipRevision identify the source roster basis but no local participant projection is kept. As-of lesson roster is verified from Scheduling/School Management before teacher confirmation; complete immutable student attendance rows are retained on each theory record version. If historical roster cannot be verified, fail closed. lesson_revision is source optimistic revision, not an invented remote CompletionFactId; non-completion/invalidation may have NULL current actual times; prior actual intervals are preserved only on preceding immutable snapshots. First-seen invalidation needs no synthetic times. Only verified completed-and-valid sources can contribute hours.'
+  checks {
+    `lesson_revision > 0` [name: 'source_revision_positive']
+    `(actual_start IS NULL AND actual_end IS NULL) OR (actual_start IS NOT NULL AND actual_end IS NOT NULL AND actual_end > actual_start)` [name: 'source_actual_interval']
+    `NOT (physically_completed AND source_valid) OR (actual_start IS NOT NULL AND actual_end IS NOT NULL)` [name: 'completed_source_requires_actuals']
+    `(kind = 'Practical' AND enrollment_id IS NOT NULL AND student_id IS NOT NULL AND vehicle_id IS NOT NULL AND group_id IS NULL AND membership_revision IS NULL) OR (kind = 'Theory' AND enrollment_id IS NULL AND student_id IS NULL AND vehicle_id IS NULL AND group_id IS NOT NULL AND membership_revision IS NOT NULL AND membership_revision > 0)` [name: 'source_kind_shape']
+  }
+}
+
+Table lesson_source_state {
+  id uuid [pk]
+  school_id uuid [not null]
+  lesson_id uuid [not null]
+  current_snapshot_id uuid [not null]
+  freshness lt_freshness [not null]
+  last_verified_at timestamptz [not null]
+  reason text
+  indexes {
+    (id, school_id) [unique]
+    (lesson_id, school_id) [unique]
+  }
+  Note: 'Keep as a separate mutable pointer/freshness projection: immutable source snapshots must not be rewritten. Unique lesson per school; only verified authoritative evidence can advance pointer, with monotonically nondecreasing lesson revision and exact comparisons of significant typed source fields (no derived checksum field). An equal revision with different fields is a source conflict: keep the trusted pointer, set ReconciliationPending, audit and re-verify against Scheduling; a repeated identical version is a no-op. Late/replayed events cannot restore older snapshots. Current means last authoritative verification, not a timeless freshness guarantee; critical commands recheck source.'
+}
+
+Table practical_training_record {
+  id uuid [pk]
+  school_id uuid [not null]
+  lesson_id uuid [not null]
+  enrollment_id uuid [not null]
+  current_version_id uuid
+  revision bigint [not null]
+  indexes {
+    (id, school_id) [unique]
+    (lesson_id, enrollment_id, school_id) [unique]
+    (id, school_id, enrollment_id, lesson_id) [unique]
+    (school_id, enrollment_id) [name: 'idx_practical_by_enrollment']
+  }
+  Note: 'PracticalTrainingRecord aggregate; one authoritative record per lesson/enrollment. Current pointer set atomically; Revision is local command concurrency, distinct from Scheduling lesson revision and fact version number.'
+  checks {
+    `revision > 0` [name: 'practical_revision_positive']
+  }
+}
+
+Table practical_record_version {
+  id uuid [pk]
+  school_id uuid [not null]
+  record_id uuid [not null]
+  enrollment_id uuid [not null]
+  lesson_id uuid [not null]
+  program_version_id uuid [not null]
+  version int [not null]
+  source_snapshot_id uuid [not null]
+  training_minutes int
+  duration_explanation text
+  distance_km numeric(10,3)
+  validation lt_validation [not null]
+  validation_reason text
+  created_by uuid [not null]
+  created_at timestamptz [not null]
+  correction_reason text
+  indexes {
+    (id, school_id) [unique]
+    (record_id, version, school_id) [unique]
+    (id, school_id, record_id) [unique]
+    (id, school_id, program_version_id) [unique]
+    (id, school_id, enrollment_id) [unique]
+  }
+  Note: 'Immutable material facts: source, training minutes, distance and selected topics. Valid requires physically completed authoritative source, required checklist fields/topics, nonnegative distance and 0 < training_minutes <= actual interval minus breaks. Shorter duration requires explanation. New version after dispute even if material facts unchanged. Current eligibility derived from validation, source and exact-version response history.'
+  checks {
+    `version > 0` [name: 'practical_version_positive']
+    `training_minutes IS NULL OR training_minutes > 0` [name: 'practical_minutes']
+    `distance_km IS NULL OR distance_km >= 0` [name: 'practical_distance']
+    `validation <> 'Valid' OR (training_minutes IS NOT NULL AND distance_km IS NOT NULL)` [name: 'practical_valid_shape']
+    `version = 1 OR (correction_reason IS NOT NULL AND length(trim(correction_reason)) > 0)` [name: 'practical_correction_reason']
+  }
+}
+
+Table practical_record_topic {
+  id uuid [pk]
+  school_id uuid [not null]
+  record_version_id uuid [not null]
+  program_version_id uuid [not null]
+  topic_id uuid [not null]
+  indexes {
+    (id, school_id) [unique]
+    (record_version_id, topic_id, school_id) [unique]
+  }
+  Note: 'Multiple programme topics; minutes/distance belong to whole record, never apportioned per topic.'
+}
+
+Table practical_record_response {
+  id uuid [pk]
+  school_id uuid [not null]
+  record_id uuid [not null]
+  record_version_id uuid [not null]
+  sequence bigint [not null]
+  actor_id uuid [not null]
+  actor_role lt_response_role [not null]
+  response lt_response_kind [not null]
+  responded_at timestamptz [not null]
+  reason text
+  command_id uuid [not null]
+  indexes {
+    (id, school_id) [unique]
+    (record_id, sequence, school_id) [unique]
+    (command_id, school_id) [unique]
+    (id, school_id, record_version_id) [unique]
+    (record_version_id, actor_role, response) [name: 'idx_practical_response_eligibility']
+  }
+  Note: 'Append-only confirmations/disputes. Actor must be assigned instructor or enrolled student from authoritative source. Confirm is accepted once per role/current version; exact retries return prior response via command_id. A later dispute is allowed after both confirmations and permanently closes this version for credit; resolution requires a new version. Administrator cannot sign for either participant.'
+  checks {
+    `sequence > 0` [name: 'response_sequence']
+    `response <> 'Dispute' OR (reason IS NOT NULL AND length(trim(reason)) > 0)` [name: 'dispute_reason']
+  }
+}
+
+Table theory_training_record {
+  id uuid [pk]
+  school_id uuid [not null]
+  lesson_id uuid [not null]
+  current_version_id uuid
+  revision bigint [not null]
+  indexes {
+    (id, school_id) [unique]
+    (lesson_id, school_id) [unique]
+    (id, school_id, lesson_id) [unique]
+  }
+  Note: 'TheoryTrainingRecord aggregate for one group lesson. Teacher explicitly reviews the full frozen participant roster and absent exceptions before confirming; no automatic credit on lesson completion.'
+  checks {
+    `revision > 0` [name: 'theory_revision_positive']
+  }
+}
+
+Table theory_record_version {
+  id uuid [pk]
+  school_id uuid [not null]
+  record_id uuid [not null]
+  lesson_id uuid [not null]
+  version int [not null]
+  source_snapshot_id uuid [not null]
+  training_minutes int [not null]
+  duration_explanation text
+  validation lt_validation [not null]
+  created_by uuid [not null]
+  created_at timestamptz [not null]
+  confirmed_by uuid
+  confirmed_at timestamptz
+  correction_reason text
+  indexes {
+    (id, school_id) [unique]
+    (record_id, version, school_id) [unique]
+    (id, school_id, record_id) [unique]
+    (id, school_id, lesson_id) [unique]
+  }
+  Note: 'Version owns full immutable Present/Absent roster, now the ONLY local persisted per-enrollment theory participant list. Before teacher confirmation, verify exact as-of lesson roster for source GroupId/MembershipRevision from Scheduling/School Management; reject omitted, extra, duplicate, cross-tenant, wrong-student or unavailable participants. Instructor, source revision and study duration are checked; 0 < study minutes <= actual interval. Corrections create new versions. Present gets full minutes, Absent zero; partial attendance not supported. Student confirmation not required.'
+  checks {
+    `version > 0 AND training_minutes > 0` [name: 'theory_positive']
+    `(confirmed_by IS NULL) = (confirmed_at IS NULL)` [name: 'theory_confirmation_pair']
+    `confirmed_at IS NULL OR validation = 'Valid'` [name: 'theory_confirmed_valid']
+    `version = 1 OR (correction_reason IS NOT NULL AND length(trim(correction_reason)) > 0)` [name: 'theory_correction_reason']
+  }
+}
+
+Table theory_attendance {
+  id uuid [pk]
+  school_id uuid [not null]
+  record_version_id uuid [not null]
+  enrollment_id uuid [not null]
+  student_id uuid [not null]
+  attendance lt_attendance [not null]
+  indexes {
+    (id, school_id) [unique]
+    (id, school_id, enrollment_id) [unique]
+    (record_version_id, enrollment_id, school_id) [unique]
+    (school_id, enrollment_id, record_version_id) [name: 'idx_theory_attendance_by_enrollment']
+  }
+  Note: 'Single authoritative local frozen participant roster: one Present/Absent row per eligible as-of Scheduling group member for this teacher-confirmed theory record version. Service compares the complete set to trusted historical as-of membership at lesson revision; no separate lesson_source_participant copy. Present contributes once only when current, Valid, teacher-confirmed and source verified; Absent/superseded rows contribute zero. All fields scoped to SchoolId/EnrollmentId; no credit ledger.'
+}
+
+
+
+Table assessment_readiness {
+  id uuid [pk]
+  school_id uuid [not null]
+  enrollment_id uuid [not null]
+  program_version_id uuid [not null]
+  definition_version_id uuid [not null]
+  current_evaluation_id uuid
+  current_decision_id uuid
+  revision bigint [not null]
+  indexes {
+    (id, school_id) [unique]
+    (enrollment_id, program_version_id, definition_version_id, school_id) [unique]
+    (id, school_id, enrollment_id) [unique]
+    (id, school_id, definition_version_id) [unique]
+    (id, school_id, enrollment_id, definition_version_id) [unique]
+  }
+  Note: 'AssessmentReadiness aggregate for enrollment/pinned programme version/selected Final definition. Formal prerequisites and human decision remain separate. No calendar expiry. Source/rule/fact/permission changes invalidate affected approvals via one-time decision terminal metadata plus append-only audit; new evaluation never revives a terminally invalidated approval.'
+  checks {
+    `revision > 0` [name: 'readiness_revision_positive']
+  }
+}
+
+Table readiness_evaluation {
+  id uuid [pk]
+  school_id uuid [not null]
+  readiness_id uuid [not null]
+  enrollment_id uuid [not null]
+  definition_version_id uuid [not null]
+  dependency_revision bigint [not null]
+  formal_status lt_formal_status [not null]
+  evaluated_at timestamptz [not null]
+  evaluated_by uuid [not null]
+  explanation text [not null]
+  indexes {
+    (id, school_id) [unique]
+    (id, school_id, readiness_id) [unique]
+    (id, school_id, enrollment_id) [unique]
+    (id, school_id, definition_version_id) [unique]
+  }
+  Note: 'Immutable evaluation of all directly owned pre-assessment requirements. Unverified source/legal applicability never satisfies a mandatory condition. Consolidated readiness_evidence_basis rows retain exact contributing current practical-record versions, theory attendance rows and result versions as observed at evaluation; no stored credit ledger. Material fact, source or applicable legal-rule changes force current revalidation; publishing a new programme version alone does not reassign learners.'
+  checks {
+    `dependency_revision > 0` [name: 'evaluation_dependency_positive']
+  }
+}
+
+Table readiness_requirement_result {
+  id uuid [pk]
+  school_id uuid [not null]
+  evaluation_id uuid [not null]
+  definition_version_id uuid [not null]
+  requirement_id uuid [not null]
+  status lt_formal_status [not null]
+  observed_minutes int
+  observed_mark int
+  explanation text [not null]
+  indexes {
+    (id, school_id) [unique]
+    (evaluation_id, requirement_id, school_id) [unique]
+  }
+  Note: 'One immutable result per requirement owned by the evaluated assessment definition version. Two composite FKs enforce that the requirement and evaluation refer to that exact definition version (and school); no M:N membership lookup. NULL observations mean not applicable or unavailable, not zero.'
+  checks {
+    `observed_minutes IS NULL OR observed_minutes >= 0` [name: 'observed_minutes_nonnegative']
+  }
+}
+
+Table readiness_evidence_basis {
+  id uuid [pk]
+  school_id uuid [not null]
+  evaluation_id uuid [not null]
+  enrollment_id uuid [not null]
+  lesson_id uuid
+  practical_record_version_id uuid
+  theory_attendance_id uuid
+  result_version_id uuid
+  observed_minutes int
+  indexes {
+    (id, school_id) [unique]
+    (evaluation_id, lesson_id, school_id) [unique]
+    (evaluation_id, result_version_id, school_id) [unique]
+    (school_id, enrollment_id, evaluation_id) [name: 'idx_readiness_evidence_scope']
+  }
+  Note: 'Immutable evaluation-time evidence shared by minute and assessment prerequisites, NOT current credit authority. One row has exactly one typed source: a current valid dual-confirmed practical version, a Present attendance row of a current verified teacher-confirmed theory version, or an eligible current assessment result version. Lesson rows freeze positive observed_minutes and lesson_id; assessment rows have neither. Unique per evaluation/lesson and per evaluation/result prevents duplicate evidence. Enforce exact school/enrollment/lesson/pinned-programme identity and currentness in application, not DBML. Never re-sum these frozen rows as current progress.'
+  checks {
+    `((practical_record_version_id IS NOT NULL)::int + (theory_attendance_id IS NOT NULL)::int + (result_version_id IS NOT NULL)::int) = 1` [name: 'readiness_evidence_source_xor']
+    `((practical_record_version_id IS NOT NULL OR theory_attendance_id IS NOT NULL) AND lesson_id IS NOT NULL AND observed_minutes IS NOT NULL AND observed_minutes > 0) OR (result_version_id IS NOT NULL AND lesson_id IS NULL AND observed_minutes IS NULL)` [name: 'readiness_evidence_typed_shape']
+  }
+}
+
+Table readiness_decision {
+  id uuid [pk]
+  school_id uuid [not null]
+  readiness_id uuid [not null]
+  evaluation_id uuid [not null]
+  actor_id uuid [not null]
+  decided_at timestamptz [not null]
+  decision lt_decision [not null]
+  reason text [not null]
+  authority_basis text [not null]
+  command_id uuid [not null]
+  invalidated_at timestamptz
+  invalidated_by uuid
+  invalidation_reason text
+  invalidation_dependency_revision bigint
+  invalidation_scope lt_invalidation_scope
+  invalidation_effective_at timestamptz
+  enrollment_id uuid [not null]
+  indexes {
+    (id, school_id) [unique]
+    (command_id, school_id) [unique]
+    (id, school_id, readiness_id) [unique]
+    (id, school_id, enrollment_id) [unique]
+  }
+  Note: 'One immutable human decision with optional one-time TERMINAL invalidation metadata for Approved only. Original evaluation, actor, time, outcome, reason, authority basis and command identity must never change. On relevant dependency/source/policy/permission change, atomically set all invalidation fields once, advance dependency revision, and append a restricted learning_audit_event under the same transaction. Do not let an approval become active again by clearing metadata or merely moving a current pointer. A PostgreSQL trigger / controlled write path is needed to prohibit editing or clearing terminal fields; DBML CHECK alone cannot enforce one-way changes. Current use also requires matching dependency_revision, current verified sources and permissions; null invalidated_at alone never proves readiness. invalidation_scope distinguishes prospective-only effects from potential retroactive defects. invalidation_effective_at records known effective time; NULL is allowed ONLY for HistoricalReviewRequired when the effective time is unresolved and forces review/hold. Historical performed assessment results are not automatically annulled by a later prospective-only change. NotApproved stays historical without invalidation.'
+  checks {
+    `decision <> 'NotApproved' OR length(trim(reason)) > 0` [name: 'decline_reason']
+    `(invalidated_at IS NULL AND invalidated_by IS NULL AND invalidation_reason IS NULL AND invalidation_dependency_revision IS NULL AND invalidation_scope IS NULL AND invalidation_effective_at IS NULL) OR (decision = 'Approved' AND invalidated_at IS NOT NULL AND invalidated_by IS NOT NULL AND invalidation_reason IS NOT NULL AND length(trim(invalidation_reason)) > 0 AND invalidation_dependency_revision IS NOT NULL AND invalidation_dependency_revision > 0 AND invalidated_at >= decided_at AND invalidation_scope IS NOT NULL AND (invalidation_scope = 'HistoricalReviewRequired' OR (invalidation_scope = 'ProspectiveOnly' AND invalidation_effective_at IS NOT NULL AND invalidation_effective_at >= decided_at)))` [name: 'decision_terminal_invalidation_shape']
+  }
+}
+
+
+Table assessment {
+  id uuid [pk]
+  school_id uuid [not null]
+  enrollment_id uuid [not null]
+  program_version_id uuid [not null]
+  definition_version_id uuid [not null]
+  attempt_number int [not null]
+  appointment_id uuid
+  revision bigint [not null]
+  indexes {
+    (id, school_id) [unique]
+    (enrollment_id, definition_version_id, attempt_number, school_id) [unique]
+    (id, school_id, enrollment_id) [unique]
+    (id, school_id, definition_version_id) [unique]
+    (id, school_id, enrollment_id, definition_version_id) [unique]
+  }
+  Note: 'Assessment aggregate = one performed attempt, not a calendar booking. Immutable result versions are ordered by version; the current result is the version with MAX(version) for this (assessment_id,school_id). No mutable current_result_version_id, eligibility enum or reason projection. Access to the current result requires fresh status, school/enrollment/definition and Final readiness-basis validation, and fails closed when unverifiable. Assessor corrections/annulments append a new version under locked attempt and optimistic revision, never overwrite old versions.'
+  checks {
+    `attempt_number > 0 AND revision > 0` [name: 'assessment_attempt_positive']
+  }
+}
+
+Table assessment_result_version {
+  id uuid [pk]
+  school_id uuid [not null]
+  assessment_id uuid [not null]
+  enrollment_id uuid [not null]
+  definition_version_id uuid [not null]
+  version int [not null]
+  command_id uuid [not null]
+  status lt_result_status [not null]
+  assessor_id uuid [not null]
+  assessed_at timestamptz [not null]
+  recorded_by uuid [not null]
+  recorded_at timestamptz [not null]
+  mark int [not null]
+  outcome lt_outcome [not null]
+  readiness_id uuid
+  readiness_decision_id uuid
+  comment text
+  correction_reason text
+  reviewed_invalidation_at timestamptz
+  indexes {
+    (id, school_id) [unique]
+    (assessment_id, version, school_id) [unique]
+    (command_id, school_id) [unique]
+    (id, school_id, assessment_id) [unique]
+    (id, school_id, enrollment_id) [unique]
+    (id, school_id, definition_version_id) [unique]
+  }
+  Note: 'Append-only result version, with exact definition_version_id for tenant-safe linking to attempt, Final readiness and optional topic marks. Current version = highest version per attempt. Only version=1 may be initially Recorded; corrections/annulments are version>1 with required correction_reason. Unique command_id per school enables idempotent retry when combined with exact-payload verification. Annulled version keeps the historical mark/outcome as an explicit historical value but is never a current prerequisite. Current result status may be Recorded, ReviewRequired or Annulled. A Final approval revoked AFTER assessed_at for a prospectively effective reason does not annul that previously lawful attempt. Retrospective/unknown impact returns ReviewRequired unless an authorized later Recorded version explicitly references the reviewed invalidation timestamp; when invalidity is confirmed, append Annulled. A decision invalidated before assessed_at NEVER authorizes that examination. For new actions terminally invalidated approval remains unusable. Unknown/unverified evidence blocks release; a status query is not a stored eligibility flag. Stale historical versions remain FK-referenced as evidence but never current. Validate mark range, derived outcome, exact Final stage and authority in the service/transaction.'
+  checks {
+    `version > 0` [name: 'assessment_result_version_positive']
+    `recorded_at >= assessed_at` [name: 'assessment_result_time']
+    `(version = 1 AND status = 'Recorded' AND correction_reason IS NULL) OR (version > 1 AND correction_reason IS NOT NULL AND length(trim(correction_reason)) > 0)` [name: 'assessment_result_reason']
+    `(readiness_id IS NULL) = (readiness_decision_id IS NULL)` [name: 'result_readiness_pair']
+    `(status = 'ReviewRequired' AND version > 1 AND reviewed_invalidation_at IS NOT NULL) OR (status <> 'ReviewRequired')` [name: 'result_review_pending_shape']
+    `reviewed_invalidation_at IS NULL OR (version > 1 AND recorded_at >= reviewed_invalidation_at)` [name: 'result_review_timestamp']
+    `reviewed_invalidation_at IS NULL OR readiness_decision_id IS NOT NULL` [name: 'result_review_requires_decision']
+  }
+}
+
+Table assessment_topic_result {
+  id uuid [pk]
+  school_id uuid [not null]
+  result_version_id uuid [not null]
+  definition_version_id uuid [not null]
+  assessment_topic_id uuid [not null]
+  mark int [not null]
+  comment text
+  indexes {
+    (id, school_id) [unique]
+    (result_version_id, assessment_topic_id, school_id) [unique]
+  }
+  Note: 'Optional versioned topic marks. Two composite tenant-scoped FKs enforce topic and result refer to the SAME definition version, not merely the same school; mark bounds use the versioned assessment scale. Informational only, not an independent pass/fail decision.'
+}
+
+
+Table training_evidence_snapshot {
+  id uuid [pk]
+  school_id uuid [not null]
+  enrollment_id uuid [not null]
+  program_version_id uuid [not null]
+  kind lt_evidence_kind [not null]
+  status lt_evidence_status [not null]
+  checklist_version_id uuid [note: 'External verified policy checklist version, logical integration ID; no cross-service FK']
+  dependency_revision bigint [not null]
+  prepared_by uuid [not null]
+  prepared_at timestamptz [not null]
+  source_verified_at timestamptz
+  indexes {
+    (id, school_id) [unique]
+    (id, school_id, enrollment_id) [unique]
+  }
+  Note: 'Immutable Journal/CompletionReport evaluation. All checklist decisions live in training_evidence_check as normalized rows with a typed outcome; no JSON/JSONB. Historical Ready is not current Ready: revalidate dependency revision/source, legal checklist and permissions before release. Ready requires verified checklist, verified source and ALL applicable check rows Satisfied. Completeness and cross-row Ready shape need transaction-time trigger/service validation; DBML row CHECK cannot enforce child-row completeness. Document-version linking belongs to Document Management.'
+  checks {
+    `dependency_revision > 0` [name: 'evidence_dependency_positive']
+    `status <> 'Ready' OR (checklist_version_id IS NOT NULL AND source_verified_at IS NOT NULL)` [name: 'ready_evidence_basis']
+  }
+}
+
+Table training_evidence_item {
+  id uuid [pk]
+  school_id uuid [not null]
+  snapshot_id uuid [not null]
+  enrollment_id uuid [not null]
+  lesson_id uuid
+  practical_record_version_id uuid
+  theory_attendance_id uuid
+  result_version_id uuid
+  readiness_decision_id uuid
+  record_response_sequence bigint
+  credited_minutes_at_snapshot int
+  observed_state varchar(80) [not null]
+  explanation text [not null]
+  indexes {
+    (id, school_id) [unique]
+    (id, school_id, snapshot_id) [unique]
+    (snapshot_id, lesson_id, school_id) [unique]
+  }
+  Note: 'Immutable journal/report evidence, NOT current credit authority. Exactly one source per row: practical record version, concrete theory attendance row, assessment result version or readiness decision. For lesson evidence record lesson_id and frozen credited_minutes_at_snapshot (zero for pending/disputed/absent). For practical evidence capture response sequence as-of snapshot. Ensure distinct lessons and exact tenant/enrollment/programme/currentness during preparation. Historical snapshot values do not re-credit lessons after correction.'
+  checks {
+    `(practical_record_version_id IS NOT NULL)::int + (theory_attendance_id IS NOT NULL)::int + (result_version_id IS NOT NULL)::int + (readiness_decision_id IS NOT NULL)::int = 1` [name: 'evidence_item_one_source']
+    `((practical_record_version_id IS NOT NULL OR theory_attendance_id IS NOT NULL) AND lesson_id IS NOT NULL AND credited_minutes_at_snapshot IS NOT NULL) OR ((practical_record_version_id IS NULL AND theory_attendance_id IS NULL) AND lesson_id IS NULL AND credited_minutes_at_snapshot IS NULL)` [name: 'evidence_item_lesson_shape']
+    `credited_minutes_at_snapshot IS NULL OR credited_minutes_at_snapshot >= 0` [name: 'evidence_item_minutes_nonnegative']
+    `record_response_sequence IS NULL OR (practical_record_version_id IS NOT NULL AND record_response_sequence >= 0)` [name: 'evidence_response_shape']
+  }
+}
+
+Table training_evidence_check {
+  id uuid [pk]
+  school_id uuid [not null]
+  snapshot_id uuid [not null]
+  enrollment_id uuid [not null]
+  check_code varchar(100) [not null]
+  check_scope lt_check_scope [not null]
+  evidence_item_id uuid
+  field_code varchar(100) [not null, note: 'Use a stable symbolic field name; use * for a whole-snapshot or whole-item check']
+  outcome lt_check_outcome [not null]
+  explanation text [not null]
+  indexes {
+    (id, school_id) [unique]
+    (snapshot_id, school_id, enrollment_id) [name: 'idx_check_snapshot_tenant']
+    (evidence_item_id, school_id, snapshot_id) [name: 'idx_check_item_target']
+  }
+  Note: 'Normalized immutable checklist result, with strict local FK to evidence snapshot and optional exact evidence item from SAME snapshot. Snapshot checks have evidence_item_id NULL, item-specific checks must reference an item. No untyped polymorphic subject_id and no JSONB. Enforce uniqueness of (snapshot, check_code, field_code, evidence_item_id NULLS NOT DISTINCT) with PostgreSQL 15+ UNIQUE NULLS NOT DISTINCT (or two partial unique indexes); DBML cannot express that property reliably. A Ready snapshot requires ALL mandatory policy checks Satisfied, checked in a deferred constraint trigger/service transaction; row-level CHECK cannot enforce completeness. The policy/checklist registry is external and therefore has no cross-service SQL FK.'
+  checks {
+    `(check_scope = 'Snapshot' AND evidence_item_id IS NULL) OR (check_scope = 'EvidenceItem' AND evidence_item_id IS NOT NULL)` [name: 'evidence_check_scope_shape']
+    `length(trim(check_code)) > 0 AND length(trim(field_code)) > 0` [name: 'evidence_check_codes_nonblank']
+    `length(trim(explanation)) > 0` [name: 'evidence_check_explanation_nonblank']
+  }
+}
+
+Table reporting_declaration {
+  id uuid [pk]
+  school_id uuid [not null]
+  snapshot_id uuid [not null]
+  actor_id uuid [not null]
+  declared_at timestamptz [not null]
+  statement text [not null]
+  command_id uuid [not null]
+  indexes {
+    (id, school_id) [unique]
+    (command_id, school_id) [unique]
+  }
+  Note: 'User-recorded declaration of manual external reporting only. Snapshot must be a currently ready CompletionReport at declaration. Never Regitra transmission, compatible import or external acknowledgement. Append-only; corrections are new audited declarations.'
+}
+
+Table learning_audit_event {
+  id uuid [pk]
+  school_id uuid [not null]
+  actor_id uuid [not null]
+  occurred_at timestamptz [not null]
+  channel lt_channel [not null]
+  action varchar(100) [not null]
+  target_type varchar(80) [not null]
+  target_id uuid [not null]
+  target_version bigint
+  outcome varchar(80) [not null]
+  correlation_id uuid [not null]
+  command_id uuid
+  reason text
+  source_snapshot_id uuid
+  dependency_revision bigint
+  indexes {
+    (id, school_id) [unique]
+  }
+  Note: 'Append-only restricted audit, not an outbox/transport. Actor can be an identified service principal for Integration/System. Include initial programme binding, confirmations, corrections, decisions/one-time terminal invalidations, declarations and MCP attempts/denials. Invalidation audit append and decision terminal-field update must commit atomically. No secrets, prompts or unnecessary personal data. Application must use exact-payload idempotency and Web-equivalent MCP checks; storage alone cannot prove consent.'
+}
+
+Ref: training_program_version.(program_id, school_id) > training_program.(id, school_id)
+Ref: program_rule_source.(program_version_id, school_id) > training_program_version.(id, school_id)
+Ref: training_topic.(program_version_id, school_id) > training_program_version.(id, school_id)
+Ref: assessment_definition.(program_id, school_id) > training_program.(id, school_id)
+Ref: assessment_definition_version.(definition_id, school_id, program_id) > assessment_definition.(id, school_id, program_id)
+Ref: assessment_definition_version.(program_version_id, school_id, program_id) > training_program_version.(id, school_id, program_id)
+Ref: assessment_topic.(definition_version_id, school_id, program_version_id) > assessment_definition_version.(id, school_id, program_version_id)
+Ref: assessment_topic.(topic_id, school_id, program_version_id) > training_topic.(id, school_id, program_version_id)
+Ref: admission_requirement.(definition_version_id, school_id, program_version_id) > assessment_definition_version.(id, school_id, program_version_id)
+Ref: admission_requirement.(prerequisite_definition_version_id, school_id, program_version_id) > assessment_definition_version.(id, school_id, program_version_id)
+Ref: student_training.(program_version_id, school_id) > training_program_version.(id, school_id)
+Ref: lesson_source_state.(current_snapshot_id, school_id, lesson_id) > lesson_source_snapshot.(id, school_id, lesson_id)
+Ref: practical_training_record.(enrollment_id, school_id) > student_training.(id, school_id)
+Ref: practical_record_version.(record_id, school_id, enrollment_id, lesson_id) > practical_training_record.(id, school_id, enrollment_id, lesson_id)
+Ref: practical_record_version.(enrollment_id, school_id, program_version_id) > student_training.(id, school_id, program_version_id)
+Ref: practical_record_version.(source_snapshot_id, school_id, lesson_id) > lesson_source_snapshot.(id, school_id, lesson_id)
+Ref: practical_training_record.(current_version_id, school_id, id) > practical_record_version.(id, school_id, record_id)
+Ref: practical_record_topic.(record_version_id, school_id, program_version_id) > practical_record_version.(id, school_id, program_version_id)
+Ref: practical_record_topic.(topic_id, school_id, program_version_id) > training_topic.(id, school_id, program_version_id)
+Ref: practical_record_response.(record_version_id, school_id, record_id) > practical_record_version.(id, school_id, record_id)
+Ref: theory_record_version.(record_id, school_id, lesson_id) > theory_training_record.(id, school_id, lesson_id)
+Ref: theory_record_version.(source_snapshot_id, school_id, lesson_id) > lesson_source_snapshot.(id, school_id, lesson_id)
+Ref: theory_training_record.(current_version_id, school_id, id) > theory_record_version.(id, school_id, record_id)
+Ref: theory_attendance.(record_version_id, school_id) > theory_record_version.(id, school_id)
+Ref: theory_attendance.(enrollment_id, school_id, student_id) > student_training.(id, school_id, student_id)
+Ref: assessment_readiness.(enrollment_id, school_id, program_version_id) > student_training.(id, school_id, program_version_id)
+Ref: assessment_readiness.(definition_version_id, school_id, program_version_id) > assessment_definition_version.(id, school_id, program_version_id)
+Ref: readiness_evaluation.(readiness_id, school_id, enrollment_id) > assessment_readiness.(id, school_id, enrollment_id)
+Ref: readiness_evaluation.(readiness_id, school_id, definition_version_id) > assessment_readiness.(id, school_id, definition_version_id)
+Ref: assessment_readiness.(current_evaluation_id, school_id, id) > readiness_evaluation.(id, school_id, readiness_id)
+Ref: readiness_requirement_result.(evaluation_id, school_id, definition_version_id) > readiness_evaluation.(id, school_id, definition_version_id)
+Ref: readiness_requirement_result.(requirement_id, school_id, definition_version_id) > admission_requirement.(id, school_id, definition_version_id)
+Ref: readiness_evidence_basis.(evaluation_id, school_id, enrollment_id) > readiness_evaluation.(id, school_id, enrollment_id)
+Ref: readiness_evidence_basis.(practical_record_version_id, school_id, enrollment_id) > practical_record_version.(id, school_id, enrollment_id)
+Ref: readiness_evidence_basis.(theory_attendance_id, school_id, enrollment_id) > theory_attendance.(id, school_id, enrollment_id)
+Ref: readiness_evidence_basis.(result_version_id, school_id, enrollment_id) > assessment_result_version.(id, school_id, enrollment_id)
+Ref: readiness_decision.(evaluation_id, school_id, readiness_id) > readiness_evaluation.(id, school_id, readiness_id)
+Ref: readiness_decision.(evaluation_id, school_id, enrollment_id) > readiness_evaluation.(id, school_id, enrollment_id)
+Ref: assessment_readiness.(current_decision_id, school_id, id) > readiness_decision.(id, school_id, readiness_id)
+Ref: assessment.(enrollment_id, school_id, program_version_id) > student_training.(id, school_id, program_version_id)
+Ref: assessment.(definition_version_id, school_id, program_version_id) > assessment_definition_version.(id, school_id, program_version_id)
+Ref: assessment_result_version.(assessment_id, school_id, enrollment_id, definition_version_id) > assessment.(id, school_id, enrollment_id, definition_version_id)
+Ref: assessment_result_version.(readiness_id, school_id, enrollment_id, definition_version_id) > assessment_readiness.(id, school_id, enrollment_id, definition_version_id)
+Ref: assessment_result_version.(readiness_decision_id, school_id, readiness_id) > readiness_decision.(id, school_id, readiness_id)
+Ref: assessment_topic_result.(result_version_id, school_id, definition_version_id) > assessment_result_version.(id, school_id, definition_version_id)
+Ref: assessment_topic_result.(assessment_topic_id, school_id, definition_version_id) > assessment_topic.(id, school_id, definition_version_id)
+Ref: training_evidence_snapshot.(enrollment_id, school_id, program_version_id) > student_training.(id, school_id, program_version_id)
+Ref: training_evidence_item.(snapshot_id, school_id, enrollment_id) > training_evidence_snapshot.(id, school_id, enrollment_id)
+Ref: training_evidence_item.(practical_record_version_id, school_id, enrollment_id) > practical_record_version.(id, school_id, enrollment_id)
+Ref: training_evidence_item.(result_version_id, school_id, enrollment_id) > assessment_result_version.(id, school_id, enrollment_id)
+Ref: training_evidence_item.(theory_attendance_id, school_id, enrollment_id) > theory_attendance.(id, school_id, enrollment_id)
+Ref: training_evidence_item.(readiness_decision_id, school_id, enrollment_id) > readiness_decision.(id, school_id, enrollment_id)
+Ref: training_evidence_check.(snapshot_id, school_id, enrollment_id) > training_evidence_snapshot.(id, school_id, enrollment_id)
+Ref: training_evidence_check.(evidence_item_id, school_id, snapshot_id) > training_evidence_item.(id, school_id, snapshot_id)
+Ref: reporting_declaration.(snapshot_id, school_id) > training_evidence_snapshot.(id, school_id)
+Ref: learning_audit_event.(source_snapshot_id, school_id) > lesson_source_snapshot.(id, school_id)

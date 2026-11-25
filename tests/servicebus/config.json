@@ -1,0 +1,83 @@
+﻿{
+    "UserConfig":  {
+                       "Logging":  {
+                                       "Type":  "Console"
+                                   },
+                       "Namespaces":  [
+                                          {
+                                              "Name":  "sbemulatorns",
+                                              "Topics":  [
+                                                             {
+                                                                 "Properties":  {
+                                                                                    "RequiresDuplicateDetection":  false,
+                                                                                    "DuplicateDetectionHistoryTimeWindow":  "PT20S",
+                                                                                    "DefaultMessageTimeToLive":  "PT1H"
+                                                                                },
+                                                                 "Name":  "vairas.scheduling.events.v1",
+                                                                 "Subscriptions":  [
+                                                                                       {
+                                                                                           "Properties":  {
+                                                                                                              "DefaultMessageTimeToLive":  "PT1H",
+                                                                                                              "LockDuration":  "PT1M",
+                                                                                                              "RequiresSession":  false,
+                                                                                                              "ForwardDeadLetteredMessagesTo":  "",
+                                                                                                              "MaxDeliveryCount":  5,
+                                                                                                              "DeadLetteringOnMessageExpiration":  false,
+                                                                                                              "ForwardTo":  ""
+                                                                                                          },
+                                                                                           "Name":  "learning-tracking"
+                                                                                       }
+                                                                                   ]
+                                                             },
+                                                             {
+                                                                 "Properties":  {
+                                                                                    "RequiresDuplicateDetection":  false,
+                                                                                    "DuplicateDetectionHistoryTimeWindow":  "PT20S",
+                                                                                    "DefaultMessageTimeToLive":  "PT1H"
+                                                                                },
+                                                                 "Name":  "vairas.school.events.v1",
+                                                                 "Subscriptions":  [
+                                                                                       {
+                                                                                           "Properties":  {
+                                                                                                              "DefaultMessageTimeToLive":  "PT1H",
+                                                                                                              "LockDuration":  "PT1M",
+                                                                                                              "RequiresSession":  false,
+                                                                                                              "ForwardDeadLetteredMessagesTo":  "",
+                                                                                                              "MaxDeliveryCount":  5,
+                                                                                                              "DeadLetteringOnMessageExpiration":  false,
+                                                                                                              "ForwardTo":  ""
+                                                                                                          },
+                                                                                           "Name":  "learning-tracking"
+                                                                                       }
+                                                                                   ]
+                                                             },
+                                                             {
+                                                                 "Properties":  {
+                                                                                    "RequiresDuplicateDetection":  false,
+                                                                                    "DuplicateDetectionHistoryTimeWindow":  "PT20S",
+                                                                                    "DefaultMessageTimeToLive":  "PT1H"
+                                                                                },
+                                                                 "Name":  "vairas.learning.events.v1",
+                                                                 "Subscriptions":  [
+                                                                                       {
+                                                                                           "Properties":  {
+                                                                                                              "DefaultMessageTimeToLive":  "PT1H",
+                                                                                                              "LockDuration":  "PT1M",
+                                                                                                              "RequiresSession":  false,
+                                                                                                              "ForwardDeadLetteredMessagesTo":  "",
+                                                                                                              "MaxDeliveryCount":  5,
+                                                                                                              "DeadLetteringOnMessageExpiration":  false,
+                                                                                                              "ForwardTo":  ""
+                                                                                                          },
+                                                                                           "Name":  "assertions"
+                                                                                       }
+                                                                                   ]
+                                                             }
+                                                         ],
+                                              "Queues":  [
+
+                                                         ]
+                                          }
+                                      ]
+                   }
+}

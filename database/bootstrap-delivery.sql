@@ -1,0 +1,6 @@
+\set ON_ERROR_STOP on
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='v_learning_tracking_delivery') THEN
+  CREATE ROLE v_learning_tracking_delivery LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOREPLICATION;
+ END IF;
+END $$;

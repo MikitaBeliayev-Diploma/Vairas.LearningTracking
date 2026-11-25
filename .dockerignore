@@ -1,0 +1,10 @@
+**/bin
+**/obj
+.git
+.local
+evidence
+tests
+documentation-update
+**/node_modules
+**/*.pfx
+**/*.key

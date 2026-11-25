@@ -1,0 +1,260 @@
+@baseUrl = https://localhost:7500
+@token = REPLACE_WITH_CURRENT_USER_ACCESS_TOKEN
+@workloadToken = REPLACE_WITH_SCOPED_WORKLOAD_TOKEN
+@schoolId = 11111111-1111-4111-8111-111111111111
+@enrollmentId = 22222222-2222-4222-8222-222222222222
+@programId = 33333333-3333-4333-8333-333333333333
+@programVersionId = 44444444-4444-4444-8444-444444444444
+@lessonId = 55555555-5555-4555-8555-555555555555
+@sourceSnapshotId = 66666666-6666-4666-8666-666666666666
+@topicId = 77777777-7777-4777-8777-777777777777
+@recordId = 88888888-8888-4888-8888-888888888888
+@evaluationId = 99999999-9999-4999-8999-999999999999
+@definitionVersionId = aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+@decisionId = bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+@assessmentId = cccccccc-cccc-4ccc-8ccc-cccccccccccc
+@snapshotId = dddddddd-dddd-4ddd-8ddd-dddddddddddd
+@studentId = eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+@actorUserId = ffffffff-ffff-4fff-8fff-ffffffffffff
+
+### Synthetic templates only. Replace IDs/revisions from actual prior responses.
+### Preserve the exact operation key/body/path when retrying. Changed intent needs a new key.
+GET {{baseUrl}}/health/live
+
+### Ready checks restricted local DB role, RLS and installed migrations
+GET {{baseUrl}}/health/ready
+
+### Create programme (Administrator)
+POST {{baseUrl}}/api/v1/training-programs
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000001
+Content-Type: application/json
+
+{"schoolId":"{{schoolId}}","categoryCode":"B","name":"Synthetic demonstration programme"}
+
+### List programmes
+GET {{baseUrl}}/api/v1/training-programs?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### Create draft: all numerical values and provenance below are synthetic, not legal requirements
+POST {{baseUrl}}/api/v1/training-programs/{{programId}}/versions
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000002
+Content-Type: application/json
+
+{
+ "schoolId":"{{schoolId}}","expectedRevision":1,"pathwayCode":"synthetic",
+ "requiredTheoryMinutes":60,"requiredPracticalMinutes":60,"theoryMinutesPerUnit":60,"practicalMinutesPerUnit":60,
+ "effectiveFrom":"2026-01-01","effectiveTo":"2027-01-01","checklistVersionId":"00000000-0000-4000-8000-000000000001",
+ "topics":[{"topicId":"{{topicId}}","key":"topic-1","name":"Synthetic topic"}],
+ "assessments":[{"definitionId":"00000000-0000-4000-8000-000000000002","definitionVersionId":"{{definitionVersionId}}","code":"final","name":"Synthetic final","trainingKind":"Theory","stage":"Final","minimumMark":0,"maximumMark":10,"passingMark":7,"requiredForCompletion":true,"topicIds":["{{topicId}}"],"requirements":[{"requirementId":"00000000-0000-4000-8000-000000000003","code":"practice","kind":"MinimumPracticalMinutes","minimumMinutes":60}]}],
+ "sources":[{"sourceId":"00000000-0000-4000-8000-000000000004","ruleCode":"synthetic-only","sourceUri":"https://synthetic.invalid/rule","edition":"test-only","applicability":"isolated synthetic demo","effectiveFrom":"2026-01-01","effectiveTo":"2027-01-01","unitDescription":"minutes","verified":true}],
+ "planningPolicies":[{"kind":"Theory","lessonMinutes":60,"allowShortFinalLesson":true,"minimumFinalLessonMinutes":15},{"kind":"Practical","lessonMinutes":60,"allowShortFinalLesson":true,"minimumFinalLessonMinutes":15}]
+}
+
+### Read full draft, including the latest programme revision
+GET {{baseUrl}}/api/v1/training-program-versions/{{programVersionId}}?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### Invalid draft replacement: expected 400 for missing required curriculum fields
+PUT {{baseUrl}}/api/v1/training-programs/{{programId}}/versions/{{programVersionId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000003
+Content-Type: application/json
+
+{}
+
+### The empty edit body intentionally demonstrates 400; supply the complete version body to edit
+
+### Publish only with a matching externally configured verified checklist
+POST {{baseUrl}}/api/v1/training-program-versions/{{programVersionId}}/publish?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000004
+Content-Type: application/json
+
+{"expectedRevision":2}
+
+### Retire for future enrollment; existing applicable pinned programmes remain retained
+POST {{baseUrl}}/api/v1/training-program-versions/{{programVersionId}}/retire?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000005
+Content-Type: application/json
+
+{"expectedRevision":3,"reason":"Replaced for future enrollments"}
+
+### Pin programme after the real School group-assignment operation succeeds
+POST {{baseUrl}}/api/v1/student-trainings
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000006
+Content-Type: application/json
+
+{"schoolId":"{{schoolId}}","enrollmentId":"{{enrollmentId}}","programVersionId":"{{programVersionId}}"}
+
+### Capture authoritative source; keep returned sourceSnapshotId
+POST {{baseUrl}}/api/v1/lessons/{{lessonId}}/source-verifications?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### Assigned instructor creates practical facts against the exact source
+POST {{baseUrl}}/api/v1/practical-records
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000007
+Content-Type: application/json
+
+{"schoolId":"{{schoolId}}","enrollmentId":"{{enrollmentId}}","lessonId":"{{lessonId}}","programVersionId":"{{programVersionId}}","sourceSnapshotId":"{{sourceSnapshotId}}","trainingMinutes":50,"distanceKm":12.5,"topicIds":["{{topicId}}"],"durationExplanation":"Ten-minute break excluded from teaching."}
+
+### Read exact current version and response/credit state
+GET {{baseUrl}}/api/v1/practical-records/{{recordId}}?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### First instructor response; switch to enrolled student's token and current revision for their own response
+POST {{baseUrl}}/api/v1/practical-records/{{recordId}}/confirmations?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000008
+Content-Type: application/json
+
+{"revision":1}
+
+### Current participant disputes this version
+POST {{baseUrl}}/api/v1/practical-records/{{recordId}}/disputes?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000009
+Content-Type: application/json
+
+{"revision":3,"reason":"Distance needs correction."}
+
+### Assigned instructor appends corrected version; old confirmations do not apply
+POST {{baseUrl}}/api/v1/practical-records/{{recordId}}/versions
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000010
+Content-Type: application/json
+
+{"schoolId":"{{schoolId}}","enrollmentId":"{{enrollmentId}}","lessonId":"{{lessonId}}","programVersionId":"{{programVersionId}}","sourceSnapshotId":"{{sourceSnapshotId}}","trainingMinutes":50,"distanceKm":13,"topicIds":["{{topicId}}"],"durationExplanation":"Break excluded.","expectedRevision":4,"correctionReason":"Corrected distance."}
+
+### Theory uses a Theory lesson/source and the full verified historical roster
+POST {{baseUrl}}/api/v1/theory-records
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000011
+Content-Type: application/json
+
+{"schoolId":"{{schoolId}}","lessonId":"{{lessonId}}","sourceSnapshotId":"{{sourceSnapshotId}}","trainingMinutes":60,"attendanceRows":[{"enrollmentId":"{{enrollmentId}}","studentId":"{{studentId}}","attendance":"Present"}]}
+
+### Full theory roster is visible only to the assigned teacher / authorized administrator
+GET {{baseUrl}}/api/v1/theory-records/{{recordId}}?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### Explicit teacher review of the current full roster
+POST {{baseUrl}}/api/v1/theory-records/{{recordId}}/confirmations?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000012
+Content-Type: application/json
+
+{"revision":1}
+
+### Correct theory attendance; this creates an unconfirmed version
+POST {{baseUrl}}/api/v1/theory-records/{{recordId}}/versions
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000013
+Content-Type: application/json
+
+{"schoolId":"{{schoolId}}","lessonId":"{{lessonId}}","sourceSnapshotId":"{{sourceSnapshotId}}","trainingMinutes":60,"attendanceRows":[{"enrollmentId":"{{enrollmentId}}","studentId":"{{studentId}}","attendance":"Absent"}],"expectedRevision":2,"correctionReason":"Corrected attendance."}
+
+### Derived progress and hour deficits
+GET {{baseUrl}}/api/v1/student-trainings/{{enrollmentId}}/progress?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### Formal prerequisites; this does not approve or pass an assessment
+POST {{baseUrl}}/api/v1/student-trainings/{{enrollmentId}}/readiness-evaluations?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000014
+Content-Type: application/json
+
+{"assessmentDefinitionVersionId":"{{definitionVersionId}}"}
+
+### Assessor makes a separate decision against the exact current evaluation
+POST {{baseUrl}}/api/v1/student-trainings/{{enrollmentId}}/readiness-decisions?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000015
+Content-Type: application/json
+
+{"evaluationId":"{{evaluationId}}","decision":"Approved","reason":"Competence observed under the applicable school policy.","expectedRevision":1}
+
+### Current readiness
+GET {{baseUrl}}/api/v1/student-trainings/{{enrollmentId}}/readiness?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### Performed final assessment; use actual performed time, not the future sample below
+POST {{baseUrl}}/api/v1/student-trainings/{{enrollmentId}}/assessments
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000016
+Content-Type: application/json
+
+{"schoolId":"{{schoolId}}","enrollmentId":"{{enrollmentId}}","assessmentDefinitionVersionId":"{{definitionVersionId}}","mark":8,"assessedAt":"2026-11-24T12:00:00Z","readinessDecisionId":"{{decisionId}}"}
+
+### Current attempt results
+GET {{baseUrl}}/api/v1/student-trainings/{{enrollmentId}}/assessments?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### Append result correction
+POST {{baseUrl}}/api/v1/assessments/{{assessmentId}}/versions?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000017
+Content-Type: application/json
+
+{"expectedRevision":1,"mark":9,"status":"Recorded","correctionReason":"Corrected transcribed mark."}
+
+### Retained read-only result history
+GET {{baseUrl}}/api/v1/assessments/{{assessmentId}}/versions?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### Prepare an internal completion report; unknown checklist items remain explicit
+POST {{baseUrl}}/api/v1/student-trainings/{{enrollmentId}}/evidence-snapshots?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000018
+Content-Type: application/json
+
+{"kind":"CompletionReport"}
+
+### Historical evidence plus current release eligibility
+GET {{baseUrl}}/api/v1/training-evidence/{{snapshotId}}?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+
+### Declaration only; no Regitra transmission occurs
+POST {{baseUrl}}/api/v1/student-trainings/{{enrollmentId}}/reporting-declarations?schoolId={{schoolId}}
+Authorization: Bearer {{token}}
+Idempotency-Key: 10000000-0000-4000-8000-000000000019
+Content-Type: application/json
+
+{"snapshotId":"{{snapshotId}}","statement":"Administrator records the manual reporting handoff."}
+
+### Workload: confirmed practical versions
+GET {{baseUrl}}/internal/v1/student-trainings/{{enrollmentId}}/confirmed-practical-records?schoolId={{schoolId}}
+Authorization: Bearer {{workloadToken}}
+
+### Workload: completion evidence
+GET {{baseUrl}}/internal/v1/student-trainings/{{enrollmentId}}/completion-evidence?schoolId={{schoolId}}
+Authorization: Bearer {{workloadToken}}
+
+### Workload: current assessment notification source
+GET {{baseUrl}}/internal/v1/notifications/assessments/{{assessmentId}}?schoolId={{schoolId}}
+Authorization: Bearer {{workloadToken}}
+
+### Workload: prospective School association
+POST {{baseUrl}}/internal/v1/scheduling/programme-applicability
+Authorization: Bearer {{workloadToken}}
+Content-Type: application/json
+
+{"schoolId":"{{schoolId}}","enrollmentId":"{{enrollmentId}}","groupId":"00000000-0000-4000-8000-000000000005","programVersionId":"{{programVersionId}}"}
+
+### Workload: versioned demand and finite placement options
+POST {{baseUrl}}/internal/v1/scheduling/planning-inputs
+Authorization: Bearer {{workloadToken}}
+Content-Type: application/json
+
+{"actorUserId":"{{actorUserId}}","inputs":{"schoolId":"{{schoolId}}","programVersionId":"{{programVersionId}}","enrollmentIds":["{{enrollmentId}}"],"teacherIds":["00000000-0000-4000-8000-000000000006"],"vehicleIds":["00000000-0000-4000-8000-000000000007"],"planningStart":"2026-11-25","planningEnd":"2026-11-25","windows":[{"startsAt":"2026-11-25T08:00:00Z","endsAt":"2026-11-25T10:00:00Z"}]}}
+
+### Workload: exact assessment allocation evidence
+POST {{baseUrl}}/internal/v1/scheduling/assessment-evidence
+Authorization: Bearer {{workloadToken}}
+Content-Type: application/json
+
+{"actorUserId":"{{actorUserId}}","request":{"schoolId":"{{schoolId}}","enrollmentId":"{{enrollmentId}}","assessmentDefinitionVersionId":"{{definitionVersionId}}","readinessEvaluationId":"{{evaluationId}}","teacherId":"00000000-0000-4000-8000-000000000006","branchId":"00000000-0000-4000-8000-000000000008","startsAt":"2026-11-25T10:00:00Z","endsAt":"2026-11-25T11:00:00Z","reason":"Synthetic final allocation"}}

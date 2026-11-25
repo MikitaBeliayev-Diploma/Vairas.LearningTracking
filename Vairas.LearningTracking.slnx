@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="Vairas.LearningTracking/Vairas.LearningTracking.csproj" />
+  <Project Path="Vairas.LearningTracking.Business/Vairas.LearningTracking.Business.csproj" />
+  <Project Path="Vairas.LearningTracking.Domain/Vairas.LearningTracking.Domain.csproj" />
+  <Project Path="Vairas.LearningTracking.Persistance/Vairas.LearningTracking.Persistance.csproj" />
+  <Project Path="Vairas.LearningTracking.Tests/Vairas.LearningTracking.Tests.csproj" />
+</Solution>

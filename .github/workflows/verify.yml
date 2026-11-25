@@ -1,0 +1,27 @@
+name: verify
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build, unit coverage, PostgreSQL integration and dependency audit
+        shell: pwsh
+        run: ./scripts/verify.ps1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate contracts, captured events, HTTP examples and DBML
+        run: |
+          cd scripts/contract-tools
+          npm ci --ignore-scripts
+          cd ../..
+          node scripts/validate-contracts.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification
+          path: evidence/run-*
